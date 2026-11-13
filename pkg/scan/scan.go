@@ -28,7 +28,6 @@ type Query struct {
 }
 
 func Run(filename string, arguments ScanArguments, debug bool) []models.Result {
-	var results []models.Result
 	var wg sync.WaitGroup
 	log := logger.GetLogger(debug)
 	queries := make(chan Query)
@@ -42,22 +41,24 @@ func Run(filename string, arguments ScanArguments, debug bool) []models.Result {
 		}
 		template.Credentials = append(template.Credentials, tCred)
 	}
+	results := make([]models.Result, len(template.URLs)*len(template.Credentials))
 	for i := 0; i < arguments.Concurrency; i++ {
 		wg.Add(1)
 		go func() {
 			for query := range queries {
 				reqURL := query.Query
-				for _, cred := range template.Credentials {
-					res, cl, err := sendReq(reqURL, arguments, template, cred.Headers)
+				for credIndex, cred := range template.Credentials {
+					res, err := sendReq(reqURL, arguments, template, cred.Headers)
 					if err != nil {
 						log.Debug("sendReq Error")
 						log.Trace(err)
+						res = &Response{}
 					}
 					aar := false
 					adr := false
 					rlt := "O"
 					rltValue := true
-					check := checkAssert(res, template.Asserts, cl)
+					check := checkAssert(res, template.Asserts)
 					if cred.Rolename != "" {
 						if check {
 							if len(reqURL.AllowRole) > 0 {
@@ -107,12 +108,12 @@ func Run(filename string, arguments ScanArguments, debug bool) []models.Result {
 						AssertAllowRole: aar,
 						AssertDenyRole:  adr,
 						StatusCode:      res.StatusCode,
-						RespSize:        cl,
+						RespSize:        res.Size,
 						Alias:           reqURL.Alias,
 						Result:          rlt,
 						Index:           "#" + strconv.Itoa(query.Index),
 					}
-					results = append(results, result)
+					results[query.Index*len(template.Credentials)+credIndex] = result
 					iLog := log.WithField("index", "#"+strconv.Itoa(query.Index))
 					if result.Alias != "" {
 						iLog.Info("check '" + result.Alias + "'")
@@ -173,7 +174,7 @@ func Run(filename string, arguments ScanArguments, debug bool) []models.Result {
 						"alias":  result.Alias,
 						"aar":    aar,
 						"adr":    adr,
-						"size":   cl,
+						"size":   res.Size,
 					}).Debug("")
 				}
 			}

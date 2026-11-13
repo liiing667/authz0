@@ -2,7 +2,10 @@ package scan
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/tls"
+	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -12,7 +15,20 @@ import (
 	"github.com/hahwul/authz0/pkg/models"
 )
 
-func sendReq(req models.URL, args ScanArguments, template models.Template, headers []string) (*http.Response, int, error) {
+// maxBodySize caps how many response bytes are buffered as evidence.
+const maxBodySize = 10 << 20 // 10 MiB
+
+// Response is the captured evidence of a single probe. The status code,
+// body and size are read exactly once and shared by every assertion and
+// report field derived from this response.
+type Response struct {
+	StatusCode int
+	Body       []byte
+	Size       int
+	Truncated  bool
+}
+
+func sendReq(req models.URL, args ScanArguments, template models.Template, headers []string) (*Response, error) {
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
@@ -61,8 +77,31 @@ func sendReq(req models.URL, args ScanArguments, template models.Template, heade
 
 	resp, err := client.Do(r)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	defer resp.Body.Close()
-	return resp, int(resp.ContentLength), nil
+
+	var reader io.Reader = resp.Body
+	if strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
+		gz, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		defer gz.Close()
+		reader = gz
+	}
+	body, err := ioutil.ReadAll(io.LimitReader(reader, maxBodySize+1))
+	if err != nil {
+		return nil, err
+	}
+	truncated := len(body) > maxBodySize
+	if truncated {
+		body = body[:maxBodySize]
+	}
+	return &Response{
+		StatusCode: resp.StatusCode,
+		Body:       body,
+		Size:       len(body),
+		Truncated:  truncated,
+	}, nil
 }

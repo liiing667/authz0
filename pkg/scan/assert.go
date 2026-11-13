@@ -1,10 +1,6 @@
 package scan
 
 import (
-	"compress/gzip"
-	"io"
-	"io/ioutil"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,7 +8,10 @@ import (
 	"github.com/hahwul/authz0/pkg/models"
 )
 
-func checkAssert(res *http.Response, asserts []models.Assert, cl int) bool {
+func checkAssert(res *Response, asserts []models.Assert) bool {
+	if res.Truncated {
+		return false
+	}
 	failSizeMargin := 0
 	for _, assert := range asserts {
 		if assert.Type == "fail-size-margin" {
@@ -38,26 +37,16 @@ func checkAssert(res *http.Response, asserts []models.Assert, cl int) bool {
 			}
 
 		case "fail-regex":
-			var reader io.ReadCloser
-			switch res.Header.Get("Content-Encoding") {
-			case "gzip":
-				reader, _ = gzip.NewReader(res.Body)
-				defer reader.Close()
-			default:
-				reader = res.Body
-			}
-			bytes, _ := ioutil.ReadAll(reader)
-			str := string(bytes)
-			match, _ := regexp.MatchString(str, assert.Value)
+			match, _ := regexp.MatchString(assert.Value, string(res.Body))
 			if match {
 				return false
 			}
 		case "fail-size":
 			size, _ := strconv.Atoi(assert.Value)
-			if cl > size-failSizeMargin {
+			if res.Size > size-failSizeMargin {
 				return false
 			}
-			if cl < size+failSizeMargin {
+			if res.Size < size+failSizeMargin {
 				return false
 			}
 		}
