@@ -1,5 +1,11 @@
 package models
 
+const (
+	MismatchNone           = ""
+	MismatchOverPrivilege  = "over-privilege"
+	MismatchUnderPrivilege = "under-privilege"
+)
+
 type Result struct {
 	URL             string
 	Method          string
@@ -14,4 +20,6 @@ type Result struct {
 	Alias           string
 	Result          string
 	Index           string
+	Error           string
+	MismatchType    string
 }

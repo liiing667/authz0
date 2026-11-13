@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"strconv"
 
 	"github.com/hahwul/authz0/pkg/logger"
@@ -34,11 +35,11 @@ var scanCmd = &cobra.Command{
 			ProxyAddress: proxyAddress,
 			Timeout:      timeout,
 		}
+		rcount := 0
 		if len(args) >= 1 {
 			log.Info("start scan 🚀")
 			results := scan.Run(args[0], scanArguments, debug)
 			log.Info("complete scan")
-			rcount := 0
 			for _, r := range results {
 				if r.Result == "X" {
 					rcount = rcount + 1
@@ -84,6 +85,9 @@ var scanCmd = &cobra.Command{
 			log.Fatal("please input template file")
 		}
 		log.Info("finish 🎉")
+		if rcount > 0 {
+			os.Exit(1)
+		}
 	},
 }
 
